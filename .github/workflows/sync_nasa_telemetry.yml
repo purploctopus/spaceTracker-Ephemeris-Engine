@@ -2,18 +2,22 @@ name: Hourly NASA Ephemeris Sync Engine
 
 on:
   schedule:
+    # ⏰ Cron schedule trigger: Fires precisely at minute 0 of every single hour!
     - cron: '0 * * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Allows you to trigger this update manually inside the GitHub interface
 
 jobs:
   build-and-sync:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Grants the server write access to update the data file in your repo
 
     steps:
     - name: Checkout Source Repository
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: main
 
     - name: Initialize Cloud Python Environment
       uses: actions/setup-python@v4
