@@ -27,7 +27,7 @@ def fetch_planet_coords(planet_code):
     safe_stop = urllib.parse.quote(stop_str)
     
     url = (
-        f"https://nasa.gov?"
+        f"https://ssd.jpl.nasa.gov/api/horizons.api?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
         f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
         f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1'"
