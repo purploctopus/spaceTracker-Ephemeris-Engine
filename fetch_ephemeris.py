@@ -1,6 +1,7 @@
 import os
 import json
 import urllib.request
+import urllib.parse
 import re
 from datetime import datetime, timedelta
 
@@ -14,17 +15,22 @@ PLANETS = {
 }
 
 def fetch_planet_coords(planet_code):
-    # Set time boundaries for a narrow 5-minute data window
+    # Set narrow time boundaries for the query window
     now = datetime.utcnow()
     start_str = now.strftime('%Y-%m-%d %H:%M')
     stop_str = (now + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M')
     
-    # 🔗 Official NASA JPL Horizons Query URL (Geocentric System Center 500@399)
+    # 💡 THE WEB-ENCODING FIX:
+    # Convert raw string spaces and punctuation into secure web-safe format characters.
+    # This prevents the urllib engine from panicking on control character whitespace gaps!
+    safe_start = urllib.parse.quote(start_str)
+    safe_stop = urllib.parse.quote(stop_str)
+    
     url = (
         f"https://nasa.gov?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
-        f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{start_str}'&"
-        f"STOP_TIME='{stop_str}'&STEP_SIZE='1%20m'&QUANTITIES='1'"
+        f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
+        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1'"
     )
     
     try:
@@ -32,26 +38,22 @@ def fetch_planet_coords(planet_code):
         with urllib.request.urlopen(req) as response:
             text = response.read().decode('utf-8')
             
-            # Locate NASA's absolute Ephemeris text data boundaries
             soe_marker = text.find("$$SOE")
             eoe_marker = text.find("$$EOE")
             if soe_marker == -1 or eoe_marker == -1:
                 print(f"❌ Marker boundary missing for planet code {planet_code}")
                 return None
             
-            # Isolate the data rows sitting between the markers
             raw_data_block = text[soe_marker+5:eoe_marker].strip()
             lines = raw_data_block.split('\n')
             if not lines or len(lines[0].strip()) == 0:
                 print(f"❌ Empty data block chunk for planet code {planet_code}")
                 return None
                 
-            # Take the very first time row in the window matrix
+            # Grab the very first data row line in the window
             target_line = lines[0].strip()
             
-            # Use regex to strip away the date stamps and extract clean coordinate values
-            # NASA format: Date__Time (UTC)  R.A.___(apparent)___DEC
-            # Example: 2026-Aug-25 18:45  11 24 32.12 +04 12 15.3
+            # Use strict regex to parse out date stamps and extract clean coordinate values
             match = re.search(r'\d{4}-\w{3}-\d{2}\s+\d{2}:\d{2}\s+(\d{2})\s+(\d{2})\s+(\d+.\d+)\s+([+-]?\d{2})\s+(\d{2})\s+(\d+.\d+)', target_line)
             
             if not match:
@@ -69,7 +71,6 @@ def fetch_planet_coords(planet_code):
             dec_m = float(match.group(5))
             dec_s = float(match.group(6))
             
-            # Preserve negative signs cleanly across the mathematical inversion
             is_negative = match.group(4).startswith('-')
             abs_deg = abs(dec_d)
             decimal_dec = abs_deg + (dec_m / 60.0) + (dec_s / 3600.0)
