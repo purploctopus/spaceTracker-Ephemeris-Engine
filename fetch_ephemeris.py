@@ -2,10 +2,8 @@ import os
 import json
 import urllib.request
 import urllib.parse
-import re
 from datetime import datetime, timedelta
 
-# NASA JPL Horizons object codes for the five major planets
 PLANETS = {
     "MERCURY": "199",
     "VENUS": "299",
@@ -15,17 +13,17 @@ PLANETS = {
 }
 
 def fetch_planet_coords(planet_code):
-    # Set narrow time boundaries for the query window
     now = datetime.utcnow()
     start_str = now.strftime('%Y-%m-%d %H:%M')
-    stop_str = (now + timedelta(minutes=5)).strftime('%Y-%m-%d %H:%M')
+    stop_str = (now + timedelta(minutes=2)).strftime('%Y-%m-%d %H:%M')
     
-    # 💡 THE WEB-ENCODING FIX:
-    # Convert raw string spaces and punctuation into secure web-safe format characters.
-    # This prevents the urllib engine from panicking on control character whitespace gaps!
     safe_start = urllib.parse.quote(start_str)
     safe_stop = urllib.parse.quote(stop_str)
     
+    # 💡 THE RAW SCIENCE LINK HOOK:
+    # Querying quantity mode '1' tells NASA to return the absolute, live Apparent
+    # Right Ascension and Declination columns corrected for today's real-time wobble!
+
     url = (
         f"https://ssd.jpl.nasa.gov/api/horizons.api?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
@@ -34,52 +32,48 @@ def fetch_planet_coords(planet_code):
     )
     
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'spaceTracker-App'})
+        req = urllib.request.Request(url, headers={'User-Agent': 'spaceTracker-Core'})
         with urllib.request.urlopen(req) as response:
             text = response.read().decode('utf-8')
             
-            soe_marker = text.find("$$SOE")
-            eoe_marker = text.find("$$EOE")
-            if soe_marker == -1 or eoe_marker == -1:
-                print(f"❌ Marker boundary missing for planet code {planet_code}")
-                return None
+            soe = text.find("$$SOE")
+            eoe = text.find("$$EOE")
+            if soe == -1 or eoe == -1: return None
             
-            raw_data_block = text[soe_marker+5:eoe_marker].strip()
-            lines = raw_data_block.split('\n')
-            if not lines or len(lines[0].strip()) == 0:
-                print(f"❌ Empty data block chunk for planet code {planet_code}")
-                return None
-                
-            # Grab the very first data row line in the window
-            target_line = lines[0].strip()
+            # Extract the raw data row text lines sitting between the markers
+            data_block = text[soe+5:eoe].strip()
+            lines = [l for l in data_block.split('\n') if l.strip()]
+            if not lines: return None
             
-            # Use strict regex to parse out date stamps and extract clean coordinate values
-            match = re.search(r'\d{4}-\w{3}-\d{2}\s+\d{2}:\d{2}\s+(\d{2})\s+(\d{2})\s+(\d+.\d+)\s+([+-]?\d{2})\s+(\d{2})\s+(\d+.\d+)', target_line)
+            # Take the active live timestamp data row line
+            target_line = lines[0]
             
-            if not match:
-                print(f"❌ Regex extraction failed on data row line: '{target_line}'")
-                return None
-                
-            # Extract Right Ascension tokens -> Convert directly to uniform decimal hours
-            ra_h = float(match.group(1))
-            ra_m = float(match.group(2))
-            ra_s = float(match.group(3))
-            decimal_ra = ra_h + (ra_m / 60.0) + (ra_s / 3600.0)
+            # 💡 FIXED COLUMN SLICING SCHEMA:
+            # NASA observer tables use strict fixed-width character spaces.
+            # We bypass regular expression guessing and slice the exact character slots!
+            # Columns 23-34: Right Ascension (HH MM SS.SS)
+            # Columns 35-46: Declination (sDD MM SS.S)
+            ra_text = target_line[22:34].strip().split()
+            dec_text = target_line[34:46].strip().split()
             
-            # Extract Declination tokens -> Convert directly to uniform decimal degrees
-            dec_d = float(match.group(4))
-            dec_m = float(match.group(5))
-            dec_s = float(match.group(6))
+            if len(ra_text) < 3 or len(dec_text) < 3: return None
             
-            is_negative = match.group(4).startswith('-')
-            abs_deg = abs(dec_d)
-            decimal_dec = abs_deg + (dec_m / 60.0) + (dec_s / 3600.0)
+            # Convert RA segments cleanly to decimal hours
+            ra_hours = float(ra_text[0]) + (float(ra_text[1]) / 60.0) + (float(ra_text[2]) / 3600.0)
+            
+            # Convert Dec segments cleanly to decimal degrees, keeping signs intact
+            dec_deg = float(dec_text[0])
+            dec_min = float(dec_text[1])
+            dec_sec = float(dec_text[2])
+            
+            is_negative = dec_text[0].startswith('-')
+            decimal_dec = abs(dec_deg) + (dec_min / 60.0) + (dec_sec / 3600.0)
             if is_negative: decimal_dec *= -1.0
             
-            return round(decimal_ra, 4), round(decimal_dec, 4)
+            return round(ra_hours, 4), round(decimal_dec, 4)
             
     except Exception as e:
-        print(f"❌ Critical runtime parse fail on planet code {planet_code}: {e}")
+        print(f"❌ Error scraping planet code {planet_code}: {e}")
         return None
 
 def main():
@@ -93,15 +87,12 @@ def main():
                 "ra": coords[0],
                 "dec": coords[1]
             })
-            print(f"✅ Successfully Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°")
+            print(f"✅ Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°")
             
     if output_catalog:
         with open("ephemeris.json", "w") as file:
             json.dump(output_catalog, file, indent=2)
-        print("🚀 Ephemeris pipeline generation sweep completed successfully.")
-    else:
-        print("❌ CRITICAL: No data parsed. Terminating to protect existing database file.")
+        print("🚀 Ephemeris generation finalized successfully.")
 
 if __name__ == "__main__":
     main()
-
