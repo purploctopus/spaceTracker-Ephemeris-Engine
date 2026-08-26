@@ -2,6 +2,8 @@ import os
 import json
 import urllib.request
 import urllib.parse
+import time
+import calendar
 from datetime import datetime, timedelta
 
 PLANETS = {
@@ -13,24 +15,18 @@ PLANETS = {
 }
 
 def calculate_current_gmst():
-    """Calculates high-precision Greenwich Mean Sidereal Time in decimal hours"""
+    """Calculates high-precision Greenwich Mean Sidereal Time using world-standard calendar constants"""
+    # 💡 THE NATIVE CALIBRATION FIX:
+    # Uses precise continuous second counts past the standard J2000 base epoch natively.
+    # This prevents integer truncation drifts from throwing your hour lines off balance!
     now = datetime.utcnow()
-    year, month, day = now.year, now.month, now.day
-    hour, minute, second = now.hour, now.minute, now.second
     
-    if month <= 2:
-        year -= 1
-        month += 12
-        
-    A = int(year / 100)
-    B = 2 - A + int(A / 4)
+    # Calculate Julian fractional days past J2000 (January 1, 2000 12:00 UTC)
+    time_tuple = now.timetuple()
+    unix_seconds = calendar.timegm(time_tuple)
     
-    # Core Julian Day count calculation
-    jd = int(365.25 * (year + 4716)) + int(30.6001 * (month + 1)) + day + B - 1524.5
-    day_fraction = (hour + (minute / 60.0) + (second / 3600.0)) / 24.0
-    jd += day_fraction
-    
-    d = jd - 2451543.5
+    # 946728000 is the exact number of seconds between 1970 and J2000
+    d = (unix_seconds - 946728000) / 86400.0
     T = d / 36525.0
     
     # Standard IAU 1982 GMST Sidereal Time Equation
@@ -49,7 +45,6 @@ def fetch_planet_coords(planet_code):
     safe_start = urllib.parse.quote(start_str)
     safe_stop = urllib.parse.quote(stop_str)
     
-
     url = (
         f"https://ssd.jpl.nasa.gov/api/horizons.api?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
@@ -72,7 +67,7 @@ def fetch_planet_coords(planet_code):
             
             target_line = lines[0]
             
-            # Precise column slicing to isolate Right Ascension and Declination text slots
+            # Slice character layout slots directly
             ra_text = target_line[22:34].strip().split()
             dec_text = target_line[34:46].strip().split()
             
@@ -109,7 +104,6 @@ def main():
             print(f"✅ Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°")
             
     if planet_list:
-        # Construct the final integrated unified clock dictionary payload
         integrated_payload = {
             "gmst_hours": current_gmst,
             "planets": planet_list
