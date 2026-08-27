@@ -1,11 +1,35 @@
 {
-  "gmst_hours": 18.612489,
+  "gmst_hours": 18.689365,
   "planets": [
     {
       "name": "MERCURY",
-      "ra": 10.4572,
-      "dec": 11.543,
-      "range_au": 1.362873
+      "ra": 10.4576,
+      "dec": 11.5404,
+      "range_au": 1.362892
+    },
+    {
+      "name": "VENUS",
+      "ra": 13.119,
+      "dec": -10.2362,
+      "range_au": 0.586581
+    },
+    {
+      "name": "MARS",
+      "ra": 6.7549,
+      "dec": 23.5014,
+      "range_au": 1.872268
+    },
+    {
+      "name": "JUPITER",
+      "ra": 9.0046,
+      "dec": 17.5654,
+      "range_au": 6.220681
+    },
+    {
+      "name": "SATURN",
+      "ra": 0.898,
+      "dec": 2.9053,
+      "range_au": 8.642528
     }
   ]
 }
