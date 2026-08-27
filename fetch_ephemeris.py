@@ -43,8 +43,6 @@ def fetch_planet_coords(planet_code):
     safe_start = urllib.parse.quote(start_str)
     safe_stop = urllib.parse.quote(stop_str)
     
-    # 💡 UPDATED QUANTITIES MATRIX:
-    # Adding ',20' forces NASA to output the precise delta range distance columns (expressed in Astronomical Units)!
     url = (
         f"https://ssd.jpl.nasa.gov/api/horizons.api?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
@@ -65,28 +63,25 @@ def fetch_planet_coords(planet_code):
             lines = [l for l in data_block.split('\n') if l.strip()]
             if not lines: return None
             
-            target_line = lines[0]
+            # Extract the raw data row
+            target_line = lines[0].strip()
+
+            tokens = target_line.split()
+            if len(tokens) < 8: return None
             
-            # Slice character layout slots directly matching NASA's fixed spacing grid
-            ra_text = target_line[22:34].strip().split()
-            dec_text = target_line[34:46].strip().split()
+            # NASA Row Format with Q=1,20:
+            # [0]Date [1]Time [2]RA_H [3]RA_M [4]RA_S [5]DEC_D [6]DEC_M [7]DEC_S [8]Delta_Dist
+            ra_hours = float(tokens[2]) + (float(tokens[3]) / 60.0) + (float(tokens[4]) / 3600.0)
             
-            # Column 47-66 holds the high-precision delta distance field
-            distance_text = target_line[46:66].strip()
-            
-            if len(ra_text) < 3 or len(dec_text) < 3: return None
-            
-            ra_hours = float(ra_text[0]) + (float(ra_text[1]) / 60.0) + (float(ra_text[2]) / 3600.0)
-            
-            dec_deg = float(dec_text[0])
-            dec_min = float(dec_text[1])
-            dec_sec = float(dec_text[2])
-            is_negative = dec_text[0].startswith('-')
+            dec_deg = float(tokens[5])
+            dec_min = float(tokens[6])
+            dec_sec = float(tokens[7])
+            is_negative = tokens[5].startswith('-')
             decimal_dec = abs(dec_deg) + (dec_min / 60.0) + (dec_sec / 3600.0)
             if is_negative: decimal_dec *= -1.0
             
-            # Extract the raw range value float
-            true_distance_au = float(distance_text)
+            # The 9th item in the row contains the exact physical distance parameter
+            true_distance_au = float(tokens[8])
             
             return round(ra_hours, 4), round(decimal_dec, 4), round(true_distance_au, 6)
             
@@ -105,7 +100,7 @@ def main():
                 "name": name,
                 "ra": coords[0],
                 "dec": coords[1],
-                "range_au": coords[2] # Lock the true distance directly into the data contract packet
+                "range_au": coords[2]
             })
             print(f"✅ Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°, DIST {coords[2]} AU")
             
@@ -121,4 +116,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
