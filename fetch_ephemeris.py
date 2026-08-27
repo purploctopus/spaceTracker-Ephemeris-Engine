@@ -1,3 +1,13 @@
+#
+#        f"https://ssd.jpl.nasa.gov/api/horizons.api?"
+#        f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
+#        f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
+#        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1'"
+#        f"https://ssd.jpl.nasa.gov/api/horizons.api?"
+#        f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
+#        f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
+#        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1,20'"
+
 import os
 import json
 import urllib.request
@@ -15,26 +25,14 @@ PLANETS = {
 }
 
 def calculate_current_gmst():
-    """Calculates high-precision Greenwich Mean Sidereal Time using world-standard calendar constants"""
-    # 💡 THE NATIVE CALIBRATION FIX:
-    # Uses precise continuous second counts past the standard J2000 base epoch natively.
-    # This prevents integer truncation drifts from throwing your hour lines off balance!
     now = datetime.utcnow()
-    
-    # Calculate Julian fractional days past J2000 (January 1, 2000 12:00 UTC)
     time_tuple = now.timetuple()
     unix_seconds = calendar.timegm(time_tuple)
-    
-    # 946728000 is the exact number of seconds between 1970 and J2000
     d = (unix_seconds - 946728000) / 86400.0
     T = d / 36525.0
-    
-    # Standard IAU 1982 GMST Sidereal Time Equation
     gmst_degrees = 280.46061837 + 360.98564736629 * d + 0.000387933 * T * T - (T * T * T / 38710000.0)
     gmst_degrees = gmst_degrees % 360.0
-    if gmst_degrees < 0:
-        gmst_degrees += 360.0
-        
+    if gmst_degrees < 0: gmst_degrees += 360.0
     return round(gmst_degrees / 15.0, 6)
 
 def fetch_planet_coords(planet_code):
@@ -45,11 +43,13 @@ def fetch_planet_coords(planet_code):
     safe_start = urllib.parse.quote(start_str)
     safe_stop = urllib.parse.quote(stop_str)
     
+    # 💡 UPDATED QUANTITIES MATRIX:
+    # Adding ',20' forces NASA to output the precise delta range distance columns (expressed in Astronomical Units)!
     url = (
         f"https://ssd.jpl.nasa.gov/api/horizons.api?"
         f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
         f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
-        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1'"
+        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1,20'"
     )
     
     try:
@@ -67,9 +67,12 @@ def fetch_planet_coords(planet_code):
             
             target_line = lines[0]
             
-            # Slice character layout slots directly
+            # Slice character layout slots directly matching NASA's fixed spacing grid
             ra_text = target_line[22:34].strip().split()
             dec_text = target_line[34:46].strip().split()
+            
+            # Column 47-66 holds the high-precision delta distance field
+            distance_text = target_line[46:66].strip()
             
             if len(ra_text) < 3 or len(dec_text) < 3: return None
             
@@ -78,12 +81,14 @@ def fetch_planet_coords(planet_code):
             dec_deg = float(dec_text[0])
             dec_min = float(dec_text[1])
             dec_sec = float(dec_text[2])
-            
             is_negative = dec_text[0].startswith('-')
             decimal_dec = abs(dec_deg) + (dec_min / 60.0) + (dec_sec / 3600.0)
             if is_negative: decimal_dec *= -1.0
             
-            return round(ra_hours, 4), round(decimal_dec, 4)
+            # Extract the raw range value float
+            true_distance_au = float(distance_text)
+            
+            return round(ra_hours, 4), round(decimal_dec, 4), round(true_distance_au, 6)
             
     except Exception as e:
         print(f"❌ Error parsing planet code {planet_code}: {e}")
@@ -99,9 +104,10 @@ def main():
             planet_list.append({
                 "name": name,
                 "ra": coords[0],
-                "dec": coords[1]
+                "dec": coords[1],
+                "range_au": coords[2] # Lock the true distance directly into the data contract packet
             })
-            print(f"✅ Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°")
+            print(f"✅ Extracted {name}: RA {coords[0]}h, DEC {coords[1]}°, DIST {coords[2]} AU")
             
     if planet_list:
         integrated_payload = {
