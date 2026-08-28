@@ -25,9 +25,10 @@ PLANETS = {
 }
 
 def calculate_current_gmst():
-    now = datetime.utcnow()
-    time_tuple = now.timetuple()
-    unix_seconds = calendar.timegm(time_tuple)
+    # 💡 FIXED: Uses high-precision system clock intervals to capture microsecond segments,
+    # completely eliminating calendar truncation bugs from your math calculations!
+    unix_seconds = time.time()
+    
     d = (unix_seconds - 946728000) / 86400.0
     T = d / 36525.0
     gmst_degrees = 280.46061837 + 360.98564736629 * d + 0.000387933 * T * T - (T * T * T / 38710000.0)
