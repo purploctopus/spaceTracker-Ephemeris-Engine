@@ -3,7 +3,7 @@ name: Hourly NASA Ephemeris Sync Engine
 on:
   schedule:
     # ⏰ Cron schedule trigger: Fires precisely at minute 0 of every single hour!
-    - cron: '0 * * * *'
+    - cron: '19 * * * *'
   workflow_dispatch: # Allows you to trigger this update manually inside the GitHub interface
 
 jobs:
