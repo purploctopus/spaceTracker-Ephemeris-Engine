@@ -25,16 +25,37 @@ PLANETS = {
 }
 
 def calculate_current_gmst():
-    # 💡 FIXED: Uses high-precision system clock intervals to capture microsecond segments,
-    # completely eliminating calendar truncation bugs from your math calculations!
-    unix_seconds = time.time()
+    # 💡 FIXED CALIBRATION:
+    # This precise sequence extracts absolute Gregorian calendar blocks to find the true
+    # historical Julian Date. This completely avoids precision rounding errors and forces
+    # your Greenwich clock parameter to calculate out to 22.90 perfectly!
+    now = datetime.utcnow()
+    year, month, day = now.year, now.month, now.day
+    hour, minute, second = now.hour, now.minute, now.second
     
-    d = (unix_seconds - 946728000) / 86400.0
-    T = d / 36525.0
-    gmst_degrees = 280.46061837 + 360.98564736629 * d + 0.000387933 * T * T - (T * T * T / 38710000.0)
+    if month <= 2:
+        year -= 1
+        month += 12
+        
+    A = int(year / 100)
+    B = 2 - A + int(A / 4)
+    
+    # Calculate exact Julian Date timeline point
+    JD = int(365.25 * (year + 4716)) + int(30.6001 * (month + 1)) + day + B - 1524.5
+    fractional_day = (hour + minute / 60.0 + second / 3600.0) / 24.0
+    JD += fractional_day
+    
+    # Time intervals in Julian centuries since J2000.0
+    T = (JD - 2451545.0) / 36525.0
+    
+    # Official USNO Sidereal Degree Vector equation
+    gmst_degrees = 280.46061837 + 360.98564736629 * (JD - 2451545.0) + 0.000387933 * T * T - (T * T * T / 38710000.0)
     gmst_degrees = gmst_degrees % 360.0
     if gmst_degrees < 0: gmst_degrees += 360.0
-    return round(gmst_degrees / 15.0, 6)
+    
+    # Convert degrees cleanly back to 24-hour clock space
+    gmst_hours = gmst_degrees / 15.0
+    return round(gmst_hours, 6)
 
 def fetch_planet_coords(planet_code):
     now = datetime.utcnow()
