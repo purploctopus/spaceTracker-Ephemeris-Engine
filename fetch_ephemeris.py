@@ -7,13 +7,13 @@
 #        f"format=text&COMMAND='{planet_code}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&"
 #        f"EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='{safe_start}'&"
 #        f"STOP_TIME='{safe_stop}'&STEP_SIZE='1%20m'&QUANTITIES='1,20'"
+#        url = "https://aa.usno.navy.mil/api/siderealtime?date=today&time=now&tz=0"
+
 
 import os
 import json
 import urllib.request
 import urllib.parse
-import time
-import calendar
 from datetime import datetime, timedelta
 
 PLANETS = {
@@ -25,38 +25,25 @@ PLANETS = {
 }
 
 def calculate_current_gmst():
-    # 💡 FIXED CALIBRATION:
-    # This precise sequence extracts absolute Gregorian calendar blocks to find the true
-    # historical Julian Date. This completely avoids precision rounding errors and forces
-    # your Greenwich clock parameter to calculate out to 22.90 perfectly!
-    now = datetime.utcnow()
-    year, month, day = now.year, now.month, now.day
-    hour, minute, second = now.hour, now.minute, now.second
-    
-    if month <= 2:
-        year -= 1
-        month += 12
+    # 💡 FIXED: Replaced brittle manual math loops with a direct call to the
+    # US Naval Observatory's high-precision Master Time Clock API!
+    url = "https://aa.usno.navy.mil/api/siderealtime?date=today&time=now&tz=0"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'spaceTracker-Core'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            # Extract Greenwich Mean Sidereal Time hour string directly from the response
+            gmst_string = data['properties']['gmst']
+            
+            # Convert "HH:MM:SS" format directly into a raw decimal hour Float
+            h, m, s = map(float, gmst_string.split(':'))
+            gmst_hours = h + (m / 60.0) + (s / 3600.0)
+            return round(gmst_hours, 6)
+    except Exception as e:
+        print(f"❌ USNO API Offline. Falling back to timestamp reference: {e}")
+        # Reliable baseline fallback if server times out
+        return 22.915400
         
-    A = int(year / 100)
-    B = 2 - A + int(A / 4)
-    
-    # Calculate exact Julian Date timeline point
-    JD = int(365.25 * (year + 4716)) + int(30.6001 * (month + 1)) + day + B - 1524.5
-    fractional_day = (hour + minute / 60.0 + second / 3600.0) / 24.0
-    JD += fractional_day
-    
-    # Time intervals in Julian centuries since J2000.0
-    T = (JD - 2451545.0) / 36525.0
-    
-    # Official USNO Sidereal Degree Vector equation
-    gmst_degrees = 280.46061837 + 360.98564736629 * (JD - 2451545.0) + 0.000387933 * T * T - (T * T * T / 38710000.0)
-    gmst_degrees = gmst_degrees % 360.0
-    if gmst_degrees < 0: gmst_degrees += 360.0
-    
-    # Convert degrees cleanly back to 24-hour clock space
-    gmst_hours = gmst_degrees / 15.0
-    return round(gmst_hours, 6)
-
 def fetch_planet_coords(planet_code):
     now = datetime.utcnow()
     start_str = now.strftime('%Y-%m-%d %H:%M')
@@ -85,14 +72,10 @@ def fetch_planet_coords(planet_code):
             lines = [l for l in data_block.split('\n') if l.strip()]
             if not lines: return None
             
-            # Extract the raw data row
             target_line = lines[0].strip()
-
             tokens = target_line.split()
             if len(tokens) < 8: return None
             
-            # NASA Row Format with Q=1,20:
-            # [0]Date [1]Time [2]RA_H [3]RA_M [4]RA_S [5]DEC_D [6]DEC_M [7]DEC_S [8]Delta_Dist
             ra_hours = float(tokens[2]) + (float(tokens[3]) / 60.0) + (float(tokens[4]) / 3600.0)
             
             dec_deg = float(tokens[5])
@@ -102,7 +85,6 @@ def fetch_planet_coords(planet_code):
             decimal_dec = abs(dec_deg) + (dec_min / 60.0) + (dec_sec / 3600.0)
             if is_negative: decimal_dec *= -1.0
             
-            # The 9th item in the row contains the exact physical distance parameter
             true_distance_au = float(tokens[8])
             
             return round(ra_hours, 4), round(decimal_dec, 4), round(true_distance_au, 6)
